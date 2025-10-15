@@ -1,5 +1,7 @@
-# kanal
+# Kanal
 > A « Boring by Design » stream processing engine for Apache Kafka
+
+[![Kanal UI Screenshot](./docs/images/visual-editor.png)](./docs/images/visual-editor.png)
 
 ## Overview
 
@@ -15,8 +17,8 @@ Things that make Kanal different:
 
 Kanal comes batteries included:
 - HTTP Server to visualize/operate/monitor your running pipeline
-
-[![Kanal UI Screenshot](./docs/images/visual-editor.png)](./docs/images/visual-editor.png)
+- Error handling and DLQ
+- Metrics and health checks
 
 ## Non-goals
 
