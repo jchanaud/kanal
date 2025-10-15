@@ -17,9 +17,10 @@ dependencies {
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
     implementation("io.micronaut.kafka:micronaut-kafka")
     implementation("io.micronaut.serde:micronaut-serde-jackson")
+    implementation("io.micronaut:micronaut-jackson-databind")
+    implementation("org.yaml:snakeyaml")
     compileOnly("io.micronaut:micronaut-http-client")
     runtimeOnly("ch.qos.logback:logback-classic")
-    runtimeOnly("org.yaml:snakeyaml")
     testImplementation("io.micronaut:micronaut-http-client")
 }
 
