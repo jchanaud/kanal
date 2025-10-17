@@ -18,15 +18,20 @@ public class Pipeline {
 
     public void start() {
         // TODO: Figure out the stages that need to be loaded first
+        // Start exploration from the Sources and explore until all Destinations reached. (out + errors)
+        // Through the links: count the caches reached via (ref) link. More caches = higher priority
         // TODO: Load the caches KCache? Kwack?
         // TODO: thread model
         stages.values().forEach(Stage::initialize);
         // TODO: naive priority model for caches
         //stages.values().stream().filter(Stage::needsCache).forEach(Stage::incrementCachePriority);
         // TODO: start the stages that need to be started first
+        // Let them load...
+        // Finally start the other Sources
+
 
         stages.values().stream()
-                .filter(s -> s instanceof KafkaConsumerStage)
+                .filter(s -> s instanceof KafkaConsumerStage) //TODO: extend to other source types
                 .forEach(s -> new Thread(((KafkaConsumerStage)s)::poll).start());
     }
 

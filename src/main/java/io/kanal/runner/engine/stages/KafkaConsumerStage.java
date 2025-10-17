@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kanal.runner.config.StageDefinition;
 import io.kanal.runner.engine.Stage;
 import io.micronaut.configuration.kafka.config.KafkaDefaultConfiguration;
+import io.micronaut.context.annotation.EachBean;
+import io.micronaut.context.annotation.Parameter;
+import io.micronaut.context.annotation.Prototype;
+import jakarta.inject.Named;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.slf4j.Logger;
 
@@ -12,6 +16,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+@Prototype
 public class KafkaConsumerStage extends Stage {
     final static Logger LOG = org.slf4j.LoggerFactory.getLogger(KafkaConsumerStage.class);
 
@@ -20,7 +25,7 @@ public class KafkaConsumerStage extends Stage {
     StageDefinition stageDefinition;
     KafkaDefaultConfiguration kafkaDefaultConfiguration;
 
-    public KafkaConsumerStage(String name, StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration){
+    public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration){
         super(name);
         this.stageDefinition = stageDefinition;
         this.kafkaDefaultConfiguration = kafkaDefaultConfiguration;
@@ -30,7 +35,7 @@ public class KafkaConsumerStage extends Stage {
     public void initialize() {
 
         consumer = new KafkaConsumer<String, String>(kafkaDefaultConfiguration.getConfig());
-        consumer.subscribe(List.of("toto"));
+        consumer.subscribe(List.of(stageDefinition.topic));
 
     }
 
@@ -38,7 +43,7 @@ public class KafkaConsumerStage extends Stage {
         LOG.info("Starting Kafka consumer poll loop for stage: " + name);
         ObjectMapper mapper = new ObjectMapper();
         while (true){
-            var records = consumer.poll(Duration.ofSeconds(1));
+            var records = consumer.poll(Duration.ofSeconds(5));
             LOG.info("Polled " + records.count() + " records for stage: " + name);
             for (var record : records) {
 
@@ -48,7 +53,7 @@ public class KafkaConsumerStage extends Stage {
                     JsonNode data = mapper.readTree(record.value());
                     var node = new DataPacket(Map.of("value", data));
                     // Send to output link
-                    emit("to", node);
+                    emit("output", node);
                 } catch(Exception e){
                     if(links.containsKey("error")){
                         var errorPacket = new DataPacket(Map.of(
@@ -66,7 +71,7 @@ public class KafkaConsumerStage extends Stage {
     }
 
     @Override
-    public void onData(DataPacket packet) {
+    public void onData(String port, DataPacket packet) {
         // No-op
     }
 

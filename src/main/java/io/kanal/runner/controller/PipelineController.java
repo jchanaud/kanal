@@ -70,17 +70,31 @@ public class PipelineController {
         inputYaml = """
   name: sample-pipeline
   version: "1.0"
-  stagesDefinitions:
+  stages:
     kafka-items:
       type: kafka-consumer
       topic: items
-      links:
-        to: in
+    transform:
+        type: transform
+        mapping: '{"testouille": test * 2}'
     peekaboo:
       type: peek
-      links:
-        from: in
-        # to: out""";
+  links:
+    in:
+      source:
+        stage: kafka-items
+        port: output
+      target:
+        stage: transform
+        port: input
+    out:
+      source:
+        stage: transform
+        port: output
+      target:
+        stage: peekaboo
+        port: input
+        """;
 
         Yaml yaml = new Yaml();
         PipelineConfig config = yaml.loadAs(inputYaml, PipelineConfig.class);
@@ -90,25 +104,21 @@ public class PipelineController {
         // (in, (from, [peekaboo]))
         // (in, (to, [kafka-items]))
         Map<String, Stage> stages = new HashMap<>();
-        Map<String, Map<String, List<Stage>>> links = new HashMap<>();
-        for (var entry : config.stagesDefinitions.entrySet()) {
+        for (var entry : config.stages.entrySet()) {
             Stage stage = stageFactory.create(entry.getKey(), entry.getValue());
             stages.put(entry.getKey(), stage);
-            for (var linkEntry : entry.getValue().links.entrySet()) {
-                links.putIfAbsent(linkEntry.getValue(), new HashMap<>());
-                // TODO: Support multiple stages per link (e.g., fan-out)
-                links.get(linkEntry.getValue()).put(linkEntry.getKey(), List.of(stage));
-            }
         }
         // Connect the stages with each other through their links
-
-        for(var stage : stages.values()){
-            var stageDef = config.stagesDefinitions.get(stage.name);
-            stageDef.links.forEach((port, link) -> {
-                stage.addLink(port, links.get(link).get(port));
-                // FIXME: from and to are the wrong way round
-            });
-        }
+        config.links.forEach((linkName, linkDef) -> {;
+            // TODO: error handling
+            var sourceStage = stages.get(linkDef.source.stage);
+            var destStage = stages.get(linkDef.target.stage);
+            // Add the destination stage to the source stage's link port
+            sourceStage.addLink(linkDef.source.port, List.of(destStage));
+            // Add the source stage to the destination stage's link port
+            destStage.addLink(linkDef.target.port, List.of(sourceStage)
+            );
+        });
         // TODO: consistency check of links/stages
         // TODO: error handling
         // TODO: acyclic check

@@ -9,7 +9,7 @@ import java.util.Map;
 
 
 public abstract class Stage {
-    Logger LOG = org.slf4j.LoggerFactory.getLogger(Stage.class);
+    private final Logger LOG = org.slf4j.LoggerFactory.getLogger(getClass());
     public  String name;
     protected Map<String, List<Stage>> links = new HashMap<>();
 
@@ -18,7 +18,7 @@ public abstract class Stage {
     }
 
     public abstract void initialize();
-    public abstract void onData(DataPacket packet);
+    public abstract void onData(String port, DataPacket packet);
 
     public void addLink(String port, List<Stage> stages) {
         links.put(port, stages);
@@ -26,6 +26,14 @@ public abstract class Stage {
 
     protected void emit(String port, DataPacket packet) {
         LOG.info("Stage [" + name + "] emitting data on port: " + port);
-        links.get(port).forEach(stage -> stage.onData(packet));
+        if(links.containsKey(port)) {
+            for (Stage targetStage : links.get(port)) {
+                LOG.info("Stage [" + name + "] sending data to stage: " + targetStage.name);
+                targetStage.onData(port, packet);
+            }
+        } else {
+            LOG.warn("Stage [" + name + "] has no links for port: " + port);
+            // TODO: handle unconnected mandatory ports (during validation phase, not here)
+        }
     }
 }
