@@ -3,13 +3,13 @@ package io.kanal.runner.engine.stages;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kanal.runner.config.StageDefinition;
-import io.kanal.runner.engine.Stage;
+import io.kanal.runner.engine.entities.DataPacket;
+import io.kanal.runner.engine.entities.Stage;
 import io.micronaut.configuration.kafka.config.KafkaDefaultConfiguration;
-import io.micronaut.context.annotation.EachBean;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
-import jakarta.inject.Named;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 
 import java.time.Duration;
@@ -25,7 +25,7 @@ public class KafkaConsumerStage extends Stage {
     StageDefinition stageDefinition;
     KafkaDefaultConfiguration kafkaDefaultConfiguration;
 
-    public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration){
+    public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration) {
         super(name);
         this.stageDefinition = stageDefinition;
         this.kafkaDefaultConfiguration = kafkaDefaultConfiguration;
@@ -35,37 +35,38 @@ public class KafkaConsumerStage extends Stage {
     public void initialize() {
 
         consumer = new KafkaConsumer<String, String>(kafkaDefaultConfiguration.getConfig());
-        consumer.subscribe(List.of(stageDefinition.topic));
 
     }
 
     public void poll() {
-        LOG.info("Starting Kafka consumer poll loop for stage: " + name);
+
+        if (isCacheSource) {
+            LOG.info("Starting Kafka consumer poll loop SEEK for stage: " + name);
+            consumer.assign(List.of(new TopicPartition(stageDefinition.topic, 0)));
+            consumer.seekToBeginning(consumer.assignment());
+        } else {
+            LOG.info("Starting Kafka consumer poll loop with group 'toto' for stage: " + name);
+            consumer.subscribe(List.of(stageDefinition.topic));
+        }
         ObjectMapper mapper = new ObjectMapper();
-        while (true){
+        while (true) {
             var records = consumer.poll(Duration.ofSeconds(5));
             LOG.info("Polled " + records.count() + " records for stage: " + name);
             for (var record : records) {
 
                 try {
                     // Deserialize the record value
-                    LOG.info("Record: " + record.value()+ " from topic: " + record.topic() + " partition: " + record.partition() + " offset: " + record.offset());
+                    LOG.info("Record: " + record.value() + " from topic: " + record.topic() + " partition: " + record.partition() + " offset: " + record.offset());
                     JsonNode data = mapper.readTree(record.value());
                     var node = new DataPacket(Map.of("value", data));
                     // Send to output link
                     emit("output", node);
-                } catch(Exception e){
-                    if(links.containsKey("error")){
-                        var errorPacket = new DataPacket(Map.of(
-                                "error", e.getMessage(),
-                                "valueString", record.value()));
-                        emit("error", errorPacket);
-                    } else {
-                        // TODO: behavior on unhandled error
-                        LOG.error("Error", e);
-                    }
+                } catch (Exception e) {
+                    var errorPacket = new DataPacket(Map.of(
+                            "error", e.getMessage(),
+                            "valueString", record.value()));
+                    emit("error", errorPacket);
                 }
-
             }
         }
     }

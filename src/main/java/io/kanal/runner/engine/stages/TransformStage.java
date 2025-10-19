@@ -4,7 +4,8 @@ import com.dashjoin.jsonata.Jsonata;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kanal.runner.config.StageDefinition;
-import io.kanal.runner.engine.Stage;
+import io.kanal.runner.engine.entities.DataPacket;
+import io.kanal.runner.engine.entities.Stage;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
 
@@ -16,10 +17,12 @@ import static com.dashjoin.jsonata.Jsonata.jsonata;
 public class TransformStage extends Stage {
     StageDefinition stageDefinition;
     Jsonata jsonata;
+
     public TransformStage(@Parameter String name, @Parameter StageDefinition stageDefinition) {
         super(name);
         this.stageDefinition = stageDefinition;
     }
+
     @Override
     public void initialize() {
         jsonata = jsonata(stageDefinition.mapping);

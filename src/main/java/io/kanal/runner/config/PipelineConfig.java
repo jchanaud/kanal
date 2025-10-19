@@ -1,7 +1,5 @@
 package io.kanal.runner.config;
 
-import io.micronaut.core.annotation.Introspected;
-
 import java.util.Map;
 
 public class PipelineConfig {

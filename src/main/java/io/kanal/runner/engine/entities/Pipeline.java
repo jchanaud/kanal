@@ -1,4 +1,4 @@
-package io.kanal.runner.engine;
+package io.kanal.runner.engine.entities;
 
 import io.kanal.runner.engine.stages.KafkaConsumerStage;
 
@@ -11,9 +11,9 @@ public class Pipeline {
     private String version;
 
     public Pipeline(String name, String version, Map<String, Stage> stages) {
-          this.stages = stages;
-          this.name = name;
-          this.version = version;
+        this.stages = stages;
+        this.name = name;
+        this.version = version;
     }
 
     public void start() {
@@ -31,8 +31,11 @@ public class Pipeline {
 
 
         stages.values().stream()
-                .filter(s -> s instanceof KafkaConsumerStage) //TODO: extend to other source types
-                .forEach(s -> new Thread(((KafkaConsumerStage)s)::poll).start());
+                .filter(s -> s instanceof KafkaConsumerStage)
+                //TODO: extend to other source types
+                .sorted((r1, r2) -> Integer.compare(r2.priority, r1.priority))
+                // TODO: wait for caches to be ready
+                .forEach(s -> new Thread(((KafkaConsumerStage) s)::poll).start());
     }
 
     public void addStage(String key, Stage stage) {

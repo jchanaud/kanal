@@ -1,7 +1,9 @@
 package io.kanal.runner.engine.stages;
 
 import io.kanal.runner.config.StageDefinition;
-import io.kanal.runner.engine.Stage;
+import io.kanal.runner.engine.entities.DataPacket;
+import io.kanal.runner.engine.entities.Stage;
+import io.micrometer.core.annotation.Counted;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
 import org.slf4j.Logger;
@@ -9,6 +11,7 @@ import org.slf4j.Logger;
 @Prototype
 public class PeekStage extends Stage {
     Logger LOG = org.slf4j.LoggerFactory.getLogger(PeekStage.class);
+
     public PeekStage(@Parameter String name, @Parameter StageDefinition stageDefinition) {
         super(name);
     }
@@ -18,6 +21,7 @@ public class PeekStage extends Stage {
         // No initialization needed for PeekStage
     }
 
+    @Counted(value = "peekstage.ondata.count", description = "Number of times onData is called in PeekStage")
     @Override
     public void onData(String port, DataPacket dataPacket) {
         LOG.info("PeekStage [" + name + "] data: " + dataPacket.getData());

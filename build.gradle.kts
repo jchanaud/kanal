@@ -20,6 +20,9 @@ dependencies {
     implementation("io.micronaut:micronaut-jackson-databind")
     implementation("org.yaml:snakeyaml")
     implementation("com.dashjoin:jsonata:0.9.8")
+    implementation("io.micronaut.micrometer:micronaut-micrometer-registry-prometheus")
+    implementation("io.micronaut:micronaut-management")
+
     compileOnly("io.micronaut:micronaut-http-client")
     runtimeOnly("ch.qos.logback:logback-classic")
     testImplementation("io.micronaut:micronaut-http-client")

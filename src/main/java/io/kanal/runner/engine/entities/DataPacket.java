@@ -1,12 +1,10 @@
-package io.kanal.runner.engine.stages;
+package io.kanal.runner.engine.entities;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class DataPacket {
     private Map<String, Object> data = new HashMap<>();
-
-    public DataPacket() {}
 
     public DataPacket(Map<String, Object> data) {
         this.data = data;

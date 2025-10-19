@@ -1,4 +1,2 @@
-
-
-rootProject.name="kanal"
+rootProject.name = "kanal"
 

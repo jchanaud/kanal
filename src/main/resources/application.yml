@@ -1,6 +1,21 @@
 micronaut:
   application:
     name: runner
+  metrics:
+    enabled: true
+    export:
+      prometheus:
+        enabled: true
+        step: PT1M
+        descriptions: true
+    binders:
+      executor.enabled: false
+      jvm.enabled: false
+      logback.enabled: false
+      processor.enabled: false
+endpoints:
+  prometheus:
+    sensitive: false
 kafka:
   bootstrap.servers: 195.154.119.34:9092
   security.protocol: SASL_PLAINTEXT
