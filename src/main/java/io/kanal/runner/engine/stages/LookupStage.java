@@ -1,7 +1,9 @@
 package io.kanal.runner.engine.stages;
 
 import com.dashjoin.jsonata.Jsonata;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.kanal.runner.config.StageDefinition;
 import io.kanal.runner.engine.entities.DataPacket;
 import io.kanal.runner.engine.entities.Stage;
@@ -55,6 +57,15 @@ public class LookupStage extends Stage {
             // Perform lookup logic here (not implemented)
             LOG.info("LookupStage [" + name + "] performing lookup (not implemente), seen cache of size" + referenceData.size());
 
+            ObjectMapper om = new ObjectMapper();
+            JsonNode node = (JsonNode) packet.getData().get("value");
+            Object input = om.convertValue(node, Object.class);
+            var lookupKey = jsonataLookupKey.evaluate(input);
+            LOG.info("LookupStage [" + name + "] performing lookup with key: " + lookupKey);
+            Object lookupValue = referenceData.get(lookupKey.toString());
+            LOG.info("LookupStage [" + name + "] found lookup value: " + lookupValue);
+            var updatedNode = ((ObjectNode) node).set("ref", (JsonNode) lookupValue);
+            packet.getData().put("value", updatedNode);
             emit("output", packet);
         } else {
             LOG.warn("LookupStage [" + name + "] received data on unknown port: " + port);

@@ -13,6 +13,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,7 +35,6 @@ public class KafkaConsumerStage extends Stage {
     @Override
     public void initialize() {
 
-        consumer = new KafkaConsumer<String, String>(kafkaDefaultConfiguration.getConfig());
 
     }
 
@@ -42,10 +42,14 @@ public class KafkaConsumerStage extends Stage {
 
         if (isCacheSource) {
             LOG.info("Starting Kafka consumer poll loop SEEK for stage: " + name);
+            var props = kafkaDefaultConfiguration.getConfig();
+            props.put("enable.auto.commit", "false");
+            consumer = new KafkaConsumer<String, String>(props);
             consumer.assign(List.of(new TopicPartition(stageDefinition.topic, 0)));
             consumer.seekToBeginning(consumer.assignment());
         } else {
             LOG.info("Starting Kafka consumer poll loop with group 'toto' for stage: " + name);
+            consumer = new KafkaConsumer<String, String>(kafkaDefaultConfiguration.getConfig());
             consumer.subscribe(List.of(stageDefinition.topic));
         }
         ObjectMapper mapper = new ObjectMapper();
@@ -58,7 +62,10 @@ public class KafkaConsumerStage extends Stage {
                     // Deserialize the record value
                     LOG.info("Record: " + record.value() + " from topic: " + record.topic() + " partition: " + record.partition() + " offset: " + record.offset());
                     JsonNode data = mapper.readTree(record.value());
-                    var node = new DataPacket(Map.of("value", data));
+                    var map = new HashMap<String, Object>();
+                    map.put("value", data);
+                    var node = new DataPacket(map);
+                    //com.dashjoin.jsonata.json.Json.
                     // Send to output link
                     emit("output", node);
                 } catch (Exception e) {

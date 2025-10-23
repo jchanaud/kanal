@@ -83,7 +83,11 @@ public class PipelineController {
                     lookupKey: 'item_id'
                   transform:
                       type: transform
-                      mapping: '{"testouille": test * 2}'
+                      mapping: '
+                        {
+                          "testouille": test * 2,
+                          "ref": ref
+                        }'
                   peekaboo:
                     type: peek
                 links:
