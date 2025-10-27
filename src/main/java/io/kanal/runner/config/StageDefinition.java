@@ -10,4 +10,5 @@ public class StageDefinition {
     public String lookupKey;
     public String cacheKey;
     public String lookupFailureBehavior;
+    public String logLevel;
 }

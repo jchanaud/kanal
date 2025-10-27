@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kanal.runner.config.StageDefinition;
 import io.kanal.runner.engine.entities.DataPacket;
-import io.kanal.runner.engine.entities.Stage;
+import io.kanal.runner.engine.entities.SourceStage;
 import io.micronaut.configuration.kafka.config.KafkaDefaultConfiguration;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
@@ -18,16 +18,19 @@ import java.util.List;
 import java.util.Map;
 
 @Prototype
-public class KafkaConsumerStage extends Stage {
+public class KafkaConsumerStage extends SourceStage {
     final static Logger LOG = org.slf4j.LoggerFactory.getLogger(KafkaConsumerStage.class);
 
     KafkaConsumer<String, String> consumer;
 
     StageDefinition stageDefinition;
     KafkaDefaultConfiguration kafkaDefaultConfiguration;
+    Map<TopicPartition, Long> initialLSO;
+    Map<TopicPartition, Long> lastReadOffsets = new HashMap<>();
+    boolean allCaughtUp = false;
 
     public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration) {
-        super(name);
+        super(name, CacheSupport.SUPPORTED);
         this.stageDefinition = stageDefinition;
         this.kafkaDefaultConfiguration = kafkaDefaultConfiguration;
     }
@@ -38,6 +41,7 @@ public class KafkaConsumerStage extends Stage {
 
     }
 
+    @Override
     public void poll() {
 
         if (isCacheSource) {
@@ -45,7 +49,16 @@ public class KafkaConsumerStage extends Stage {
             var props = kafkaDefaultConfiguration.getConfig();
             props.put("enable.auto.commit", "false");
             consumer = new KafkaConsumer<String, String>(props);
-            consumer.assign(List.of(new TopicPartition(stageDefinition.topic, 0)));
+
+            List<TopicPartition> partitions = consumer.partitionsFor(stageDefinition.topic)
+                    .stream()
+                    .map(info -> new TopicPartition(info.topic(), info.partition()))
+                    .toList();
+            // Get the initial LSO that will be used to determine when we are caught up
+            initialLSO = consumer.endOffsets(partitions);
+            partitions.forEach(tp -> lastReadOffsets.put(tp, -1L));
+
+            consumer.assign(partitions);
             consumer.seekToBeginning(consumer.assignment());
         } else {
             LOG.info("Starting Kafka consumer poll loop with group 'toto' for stage: " + name);
@@ -54,10 +67,10 @@ public class KafkaConsumerStage extends Stage {
         }
         ObjectMapper mapper = new ObjectMapper();
         while (true) {
+
             var records = consumer.poll(Duration.ofSeconds(5));
             LOG.info("Polled " + records.count() + " records for stage: " + name);
             for (var record : records) {
-
                 try {
                     // Deserialize the record value
                     LOG.info("Record: " + record.value() + " from topic: " + record.topic() + " partition: " + record.partition() + " offset: " + record.offset());
@@ -74,13 +87,42 @@ public class KafkaConsumerStage extends Stage {
                             "valueString", record.value()));
                     emit("error", errorPacket);
                 }
+                lastReadOffsets.put(new TopicPartition(record.topic(), record.partition()), record.offset());
             }
+            if (!allCaughtUp)
+                maybeAllCaughtUp();
+
         }
+    }
+
+    private void maybeAllCaughtUp() {
+
+        long remainingRecords = initialLSO.entrySet()
+                .stream()
+                .mapToLong(lsoEntry -> {
+                            long lastRead = lastReadOffsets.get(lsoEntry.getKey());
+                            long target = lsoEntry.getValue() - 1;
+                            long remaining = target - lastRead;
+                            return Math.max(0, remaining);
+                        }
+                ).sum();
+
+        if (remainingRecords == 0) {
+            allCaughtUp = true;
+            LOG.info("KafkaConsumerStage [" + name + "] is all caught up.");
+        } else {
+            LOG.info("KafkaConsumerStage [" + name + "] total remaining records to catch up: " + remainingRecords);
+        }
+
+    }
+
+    @Override
+    public boolean allCaughtUp() {
+        return allCaughtUp;
     }
 
     @Override
     public void onData(String port, DataPacket packet) {
         // No-op
     }
-
 }

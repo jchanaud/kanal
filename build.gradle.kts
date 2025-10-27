@@ -3,6 +3,7 @@ plugins {
     id("com.gradleup.shadow") version "8.3.7"
     id("io.micronaut.test-resources") version "4.5.4"
     id("io.micronaut.aot") version "4.5.4"
+    id("io.freefair.lombok") version "9.0.0"
 }
 
 version = "0.1"

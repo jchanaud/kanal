@@ -10,8 +10,6 @@ import java.util.Map;
 public abstract class Stage {
     private final Logger LOG = org.slf4j.LoggerFactory.getLogger(getClass());
     public String name;
-    public int priority = 0;
-    public boolean isCacheSource = false;
     protected Map<String, List<Link.StagePort>> links = new HashMap<>();
 
     public Stage(String name) {
@@ -39,11 +37,4 @@ public abstract class Stage {
         }
     }
 
-    public void setCacheSource() {
-        this.priority += 1;
-        this.isCacheSource = true;
-        LOG.info("Stage [" + name + "] set as Cache source & priority of increased to: " + this.priority);
-        // Propagate to upstream stages on "input" port
-        links.getOrDefault("input", List.of()).forEach(link -> link.stage.setCacheSource());
-    }
 }
