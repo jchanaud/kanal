@@ -1,6 +1,11 @@
 micronaut:
   application:
     name: runner
+  router:
+    static-resources:
+      react:
+        paths: classpath:ui
+        mapping: "/ui/**"
   metrics:
     enabled: true
     export:
