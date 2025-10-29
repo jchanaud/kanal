@@ -27,5 +27,5 @@ kafka:
   sasl.mechanism: PLAIN
   sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="***";
   group.id: toto
-  key.deserializer: "org.apache.kafka.common.serialization.StringDeserializer"
-  value.deserializer: "org.apache.kafka.common.serialization.StringDeserializer"
+  key.deserializer: "org.apache.kafka.common.serialization.ByteArrayDeserializer"
+  value.deserializer: "org.apache.kafka.common.serialization.ByteArrayDeserializer"

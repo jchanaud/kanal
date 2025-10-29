@@ -1,6 +1,5 @@
 package io.kanal.runner.engine.stages;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kanal.runner.config.StageDefinition;
 import io.kanal.runner.engine.entities.DataPacket;
@@ -8,8 +7,20 @@ import io.kanal.runner.engine.entities.SourceStage;
 import io.micronaut.configuration.kafka.config.KafkaDefaultConfiguration;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.header.ConnectHeaders;
+import org.apache.kafka.connect.header.Headers;
+import org.apache.kafka.connect.runtime.ConnectorConfig;
+import org.apache.kafka.connect.runtime.SinkConnectorConfig;
+import org.apache.kafka.connect.runtime.WorkerConfig;
+import org.apache.kafka.connect.runtime.isolation.Plugins;
+import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.storage.Converter;
+import org.apache.kafka.connect.storage.HeaderConverter;
+import org.apache.kafka.connect.util.ConnectUtils;
 import org.slf4j.Logger;
 
 import java.time.Duration;
@@ -21,23 +32,38 @@ import java.util.Map;
 public class KafkaConsumerStage extends SourceStage {
     final static Logger LOG = org.slf4j.LoggerFactory.getLogger(KafkaConsumerStage.class);
 
-    KafkaConsumer<String, String> consumer;
+    KafkaConsumer<byte[], byte[]> consumer;
 
     StageDefinition stageDefinition;
     KafkaDefaultConfiguration kafkaDefaultConfiguration;
     Map<TopicPartition, Long> initialLSO;
     Map<TopicPartition, Long> lastReadOffsets = new HashMap<>();
+    Plugins plugins;
+    Converter keyConverter;
+    Converter valueConverter;
+    HeaderConverter headerConverter;
     boolean allCaughtUp = false;
 
-    public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration) {
+    public KafkaConsumerStage(@Parameter String name, @Parameter StageDefinition stageDefinition, KafkaDefaultConfiguration kafkaDefaultConfiguration, Plugins plugins) {
         super(name, CacheSupport.SUPPORTED);
         this.stageDefinition = stageDefinition;
         this.kafkaDefaultConfiguration = kafkaDefaultConfiguration;
+        this.plugins = plugins;
     }
 
     @Override
     public void initialize() {
+        ConnectorConfig connConfig = new SinkConnectorConfig(plugins, Map.of(
+                ConnectorConfig.NAME_CONFIG, name,
+                ConnectorConfig.CONNECTOR_CLASS_CONFIG, "fake",
+                ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
+                ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
+                ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.storage.SimpleHeaderConverter"
+        ));
 
+        keyConverter = plugins.newConverter(connConfig, ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG, ConnectorConfig.KEY_CONVERTER_VERSION_CONFIG);
+        valueConverter = plugins.newConverter(connConfig, WorkerConfig.VALUE_CONVERTER_CLASS_CONFIG, ConnectorConfig.VALUE_CONVERTER_VERSION_CONFIG);
+        headerConverter = plugins.newHeaderConverter(connConfig, ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG, ConnectorConfig.HEADER_CONVERTER_VERSION_CONFIG);
 
     }
 
@@ -48,7 +74,7 @@ public class KafkaConsumerStage extends SourceStage {
             LOG.info("Starting Kafka consumer poll loop SEEK for stage: " + name);
             var props = kafkaDefaultConfiguration.getConfig();
             props.put("enable.auto.commit", "false");
-            consumer = new KafkaConsumer<String, String>(props);
+            consumer = new KafkaConsumer<byte[], byte[]>(props);
 
             List<TopicPartition> partitions = consumer.partitionsFor(stageDefinition.topic)
                     .stream()
@@ -62,7 +88,7 @@ public class KafkaConsumerStage extends SourceStage {
             consumer.seekToBeginning(consumer.assignment());
         } else {
             LOG.info("Starting Kafka consumer poll loop with group 'toto' for stage: " + name);
-            consumer = new KafkaConsumer<String, String>(kafkaDefaultConfiguration.getConfig());
+            consumer = new KafkaConsumer<byte[], byte[]>(kafkaDefaultConfiguration.getConfig());
             consumer.subscribe(List.of(stageDefinition.topic));
         }
         ObjectMapper mapper = new ObjectMapper();
@@ -70,29 +96,61 @@ public class KafkaConsumerStage extends SourceStage {
 
             var records = consumer.poll(Duration.ofSeconds(5));
             LOG.info("Polled " + records.count() + " records for stage: " + name);
-            for (var record : records) {
+            for (var msg : records) {
                 try {
                     // Deserialize the record value
-                    LOG.info("Record: " + record.value() + " from topic: " + record.topic() + " partition: " + record.partition() + " offset: " + record.offset());
-                    JsonNode data = mapper.readTree(record.value());
-                    var map = new HashMap<String, Object>();
-                    map.put("value", data);
-                    var node = new DataPacket(map);
+                    LOG.info("Record: " + msg.value() + " from topic: " + msg.topic() + " partition: " + msg.partition() + " offset: " + msg.offset());
+
+                    SchemaAndValue keyAndSchema = keyConverter.toConnectData(msg.topic(), msg.headers(), msg.key());
+
+                    SchemaAndValue valueAndSchema = valueConverter.toConnectData(msg.topic(), msg.headers(), msg.value());
+
+                    Headers headers = convertHeadersFor(msg);
+
+
+                    Long timestamp = ConnectUtils.checkAndConvertTimestamp(msg.timestamp());
+                    SinkRecord origRecord = new SinkRecord(msg.topic(), msg.partition(),
+                            keyAndSchema.schema(), keyAndSchema.value(),
+                            valueAndSchema.schema(), valueAndSchema.value(),
+                            msg.offset(),
+                            timestamp,
+                            msg.timestampType(),
+                            headers);
+
+
+                    var node = new DataPacket(Map.of("record", origRecord));
                     //com.dashjoin.jsonata.json.Json.
                     // Send to output link
                     emit("output", node);
                 } catch (Exception e) {
+                    LOG.error("ouch", e);
                     var errorPacket = new DataPacket(Map.of(
                             "error", e.getMessage(),
-                            "valueString", record.value()));
-                    emit("error", errorPacket);
+                            "valueString", msg.value()));
+                    if (links.containsKey("error")) {
+                        emit("error", errorPacket);
+                    } else
+                        throw e;
                 }
-                lastReadOffsets.put(new TopicPartition(record.topic(), record.partition()), record.offset());
+                lastReadOffsets.put(new TopicPartition(msg.topic(), msg.partition()), msg.offset());
             }
             if (!allCaughtUp)
                 maybeAllCaughtUp();
 
         }
+    }
+
+    private Headers convertHeadersFor(ConsumerRecord<byte[], byte[]> record) {
+        Headers result = new ConnectHeaders();
+        org.apache.kafka.common.header.Headers recordHeaders = record.headers();
+        if (recordHeaders != null) {
+            String topic = record.topic();
+            for (org.apache.kafka.common.header.Header recordHeader : recordHeaders) {
+                SchemaAndValue schemaAndValue = headerConverter.toConnectHeader(topic, recordHeader.key(), recordHeader.value());
+                result.add(recordHeader.key(), schemaAndValue);
+            }
+        }
+        return result;
     }
 
     private void maybeAllCaughtUp() {

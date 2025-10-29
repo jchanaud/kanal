@@ -1,8 +1,10 @@
 package io.kanal.runner.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.kanal.runner.beanfactories.StageFactory;
 import io.kanal.runner.config.PipelineConfig;
 import io.kanal.runner.engine.Pipeline;
-import io.kanal.runner.engine.StageFactory;
+import io.kanal.runner.engine.converters.ConnectRecordConverter;
 import io.kanal.runner.engine.entities.Link;
 import io.kanal.runner.engine.entities.Stage;
 import io.micronaut.http.annotation.Controller;
@@ -13,7 +15,6 @@ import org.apache.kafka.common.metrics.PluginMetrics;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
-import org.apache.kafka.connect.runtime.WorkerConfig;
 import org.apache.kafka.connect.runtime.isolation.Plugins;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
@@ -32,75 +33,18 @@ public class PipelineController {
     @Inject
     StageFactory stageFactory;
 
+    @Inject
+    ConnectRecordConverter<SinkRecord> recordConverter;
+
+    @Inject
+    Plugins plugins;
+
     @Get("/")
     public String start() {
-        var p = new Plugins(Map.of(WorkerConfig.PLUGIN_PATH_CONFIG, "./libs"));
-        var connector = p.newConnector("JdbcSinkConnector");
-        SinkTask task = (SinkTask) p.newTask(connector.taskClass());
-        task.initialize(new SinkTaskContext() {
-            @Override
-            public Map<String, String> configs() {
-                return Map.of();
-            }
 
-            @Override
-            public void offset(Map<TopicPartition, Long> offsets) {
-
-            }
-
-            @Override
-            public void offset(TopicPartition tp, long offset) {
-
-            }
-
-            @Override
-            public void timeout(long timeoutMs) {
-
-            }
-
-            @Override
-            public Set<TopicPartition> assignment() {
-                return Set.of();
-            }
-
-            @Override
-            public void pause(TopicPartition... partitions) {
-
-            }
-
-            @Override
-            public void resume(TopicPartition... partitions) {
-
-            }
-
-            @Override
-            public void requestCommit() {
-
-            }
-
-            @Override
-            public PluginMetrics pluginMetrics() {
-                return null;
-            }
-        });
-        var props = Map.of("connection.url", "jdbc:postgresql://localhost:5432/postgres",
-                "connection.user", "postgres",
-                "connection.password", "example",
-                "auto.create", "true");
-        task.start(props);
-        Schema valueSchema = SchemaBuilder.struct()
-                .field("id", SchemaBuilder.INT32_SCHEMA)
-                .field("name", SchemaBuilder.STRING_SCHEMA)
-                .build();
-        Struct struct = new Struct(valueSchema)
-                .put("id", 1)
-                .put("name", "test-name");
-        var record = new SinkRecord("test", 0, null, null, valueSchema, struct, 0L);
-        task.put(List.of(record));
-
-        
-        //Pipeline samplePipeline = getSamplePipeline();
-        //samplePipeline.start();
+        //jdbcSinkTest();
+        Pipeline samplePipeline = getSamplePipeline();
+        samplePipeline.start();
         return "Typology Controller is up and running!";
     }
 
@@ -226,5 +170,81 @@ public class PipelineController {
         // TODO: acyclic check
         Pipeline pipeline = new Pipeline(config.name, config.version, stages);
         return pipeline;
+    }
+
+    public void jdbcSinkTest() {
+        var connector = plugins.newConnector("JdbcSinkConnector");
+        SinkTask task = (SinkTask) plugins.newTask(connector.taskClass());
+        task.initialize(new SinkTaskContext() {
+            @Override
+            public Map<String, String> configs() {
+                return Map.of();
+            }
+
+            @Override
+            public void offset(Map<TopicPartition, Long> offsets) {
+
+            }
+
+            @Override
+            public void offset(TopicPartition tp, long offset) {
+
+            }
+
+            @Override
+            public void timeout(long timeoutMs) {
+
+            }
+
+            @Override
+            public Set<TopicPartition> assignment() {
+                return Set.of();
+            }
+
+            @Override
+            public void pause(TopicPartition... partitions) {
+
+            }
+
+            @Override
+            public void resume(TopicPartition... partitions) {
+
+            }
+
+            @Override
+            public void requestCommit() {
+
+            }
+
+            @Override
+            public PluginMetrics pluginMetrics() {
+                return null;
+            }
+        });
+        var props = Map.of("connection.url", "jdbc:postgresql://localhost:5432/postgres",
+                "connection.user", "postgres",
+                "connection.password", "example",
+                "auto.create", "true");
+        task.start(props);
+        Schema valueSchema = SchemaBuilder.struct()
+                .field("id", SchemaBuilder.INT32_SCHEMA)
+                .field("name", SchemaBuilder.STRING_SCHEMA)
+                .field("address", SchemaBuilder.struct()
+                        .field("street", SchemaBuilder.STRING_SCHEMA)
+                        .field("city", SchemaBuilder.STRING_SCHEMA)
+                        .build())
+                .build();
+        Struct struct = new Struct(valueSchema)
+                .put("id", 1)
+                .put("name", "test-name")
+                .put("address", new Struct(valueSchema.field("address").schema())
+                        .put("street", "123 Main St")
+                        .put("city", "Anytown"));
+        var record = new SinkRecord("test", 0, null, null, valueSchema, struct, 0L);
+
+        JsonNode node = recordConverter.recordToJsonNode(record);
+        SinkRecord newRecord = recordConverter.jsonNodeToRecord(record, node);
+
+        task.put(List.of(record));
     }
 }
