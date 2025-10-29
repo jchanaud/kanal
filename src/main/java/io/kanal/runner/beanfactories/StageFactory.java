@@ -1,4 +1,4 @@
-package io.kanal.runner.engine;
+package io.kanal.runner.beanfactories;
 
 import io.kanal.runner.config.StageDefinition;
 import io.kanal.runner.engine.entities.Stage;

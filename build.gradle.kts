@@ -39,7 +39,7 @@ dependencies {
 
     // TODO: Remove later
     //  JDBC Connector for Development phase
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(fileTree(mapOf("dir" to "libs/kafka-connect-jdbc", "include" to listOf("*.jar"))))
 
     compileOnly("io.micronaut:micronaut-http-client")
     runtimeOnly("ch.qos.logback:logback-classic")

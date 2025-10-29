@@ -9,7 +9,7 @@
         </encoder>
     </appender>
     <logger name="io.kanal" level="debug"/>
-    <logger name="org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader" level="warn"/>
+    <logger name="org.apache.kafka.connect.runtime.isolation" level="warn"/>
 
     <root level="info">
         <appender-ref ref="STDOUT"/>
