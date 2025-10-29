@@ -9,10 +9,7 @@ tasks.register('copyClientResources', Copy) {
     group = 'frontend'
     description = 'Copy client resources into build resources directory'
 
-    dependsOn = [
-            'installFrontend',
-            'assembleFrontend'
-    ]
+    dependsOn('assembleFrontend')
 
     from("dist")
     into("../build/resources/main/ui/")

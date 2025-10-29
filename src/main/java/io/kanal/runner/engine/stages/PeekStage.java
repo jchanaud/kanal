@@ -44,7 +44,7 @@ public class PeekStage extends Stage {
     @Counted(value = "peekstage.ondata.count", description = "Number of times onData is called in PeekStage")
     @Override
     public void onData(String port, DataPacket dataPacket) {
-        LOG.atLevel(logLevel).log("PeekStage [" + name + "] data: " + dataPacket.getData());
+        LOG.info("PeekStage [" + name + "] data: " + dataPacket.getData());
         emit("out", dataPacket);
     }
 }

@@ -1,4 +1,8 @@
-package io.kanal.runner.engine.entities;
+package io.kanal.runner.engine;
+
+import io.kanal.runner.engine.entities.CacheStage;
+import io.kanal.runner.engine.entities.SourceStage;
+import io.kanal.runner.engine.entities.Stage;
 
 import java.util.List;
 import java.util.Map;
@@ -56,6 +60,7 @@ public class Pipeline {
                 .map(SourceStage.class::cast)
                 .filter(stage -> !stage.isCacheSource())
                 .forEach(stage -> new Thread(stage::poll).start());
+        //LinkedBlockingQueue
     }
 
     public void addStage(String key, Stage stage) {

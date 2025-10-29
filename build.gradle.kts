@@ -11,6 +11,14 @@ group = "io.kanal.runner"
 
 repositories {
     mavenCentral()
+    maven {
+        url = uri("https://packages.confluent.io/maven/")
+    }
+    // TODO: Remove later
+    //  JDBC Connector for Development phase
+    flatDir {
+        dirs("libs")
+    }
 }
 
 dependencies {
@@ -23,6 +31,15 @@ dependencies {
     implementation("com.dashjoin:jsonata:0.9.8")
     implementation("io.micronaut.micrometer:micronaut-micrometer-registry-prometheus")
     implementation("io.micronaut:micronaut-management")
+
+    implementation("org.apache.kafka:connect-api:4.1.0")
+    // I need Plugin classloading magic from connect-runtime...
+    implementation("org.apache.kafka:connect-runtime:4.1.0")
+
+
+    // TODO: Remove later
+    //  JDBC Connector for Development phase
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 
     compileOnly("io.micronaut:micronaut-http-client")
     runtimeOnly("ch.qos.logback:logback-classic")
@@ -70,4 +87,4 @@ tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative"
     jdkVersion = "21"
 }
 
-tasks["classes"].dependsOn(":frontend:copyClientResources")
+//tasks["classes"].dependsOn(":frontend:copyClientResources")
