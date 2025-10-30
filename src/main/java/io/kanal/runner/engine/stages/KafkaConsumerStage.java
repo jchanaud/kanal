@@ -53,11 +53,27 @@ public class KafkaConsumerStage extends SourceStage {
 
     @Override
     public void initialize() {
+        String schemaInline = """
+                {
+                   "$schema": "http://json-schema.org/draft-07/schema#",
+                   "title": "Generated schema for Root",
+                   "type": "object",
+                   "properties": {
+                     "item": {
+                       "type": "number"
+                     }
+                   },
+                   "required": [
+                     "item"
+                   ]
+                 }""";
         ConnectorConfig connConfig = new SinkConnectorConfig(plugins, Map.of(
                 ConnectorConfig.NAME_CONFIG, name,
                 ConnectorConfig.CONNECTOR_CLASS_CONFIG, "fake",
                 ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
+                ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG + ".schemas.enable", "false",
                 ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
+                ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG + ".schema.content", schemaInline,
                 ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.storage.SimpleHeaderConverter"
         ));
 
@@ -104,6 +120,7 @@ public class KafkaConsumerStage extends SourceStage {
                     SchemaAndValue keyAndSchema = keyConverter.toConnectData(msg.topic(), msg.headers(), msg.key());
 
                     SchemaAndValue valueAndSchema = valueConverter.toConnectData(msg.topic(), msg.headers(), msg.value());
+                    // JsonConverter
 
                     Headers headers = convertHeadersFor(msg);
 
@@ -134,7 +151,7 @@ public class KafkaConsumerStage extends SourceStage {
                 }
                 lastReadOffsets.put(new TopicPartition(msg.topic(), msg.partition()), msg.offset());
             }
-            if (!allCaughtUp)
+            if (isCacheSource && !allCaughtUp)
                 maybeAllCaughtUp();
 
         }
@@ -154,18 +171,23 @@ public class KafkaConsumerStage extends SourceStage {
     }
 
     private void maybeAllCaughtUp() {
-
+        // TODO: optimize this mess
+        var beginOffsets = consumer.beginningOffsets(initialLSO.keySet());
         long remainingRecords = initialLSO.entrySet()
                 .stream()
                 .mapToLong(lsoEntry -> {
                             long lastRead = lastReadOffsets.get(lsoEntry.getKey());
+                            long begin = beginOffsets.get(lsoEntry.getKey());
                             long target = lsoEntry.getValue() - 1;
+                            if (lastRead == -1L) {
+                                return lsoEntry.getValue() - begin;
+                            }
                             long remaining = target - lastRead;
                             return Math.max(0, remaining);
                         }
                 ).sum();
 
-        if (remainingRecords == 0) {
+        if (remainingRecords <= 0) {
             allCaughtUp = true;
             LOG.info("KafkaConsumerStage [" + name + "] is all caught up.");
         } else {

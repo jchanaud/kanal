@@ -443,6 +443,36 @@ public class JsonConverter implements Converter, HeaderConverter, Versioned {
         return jsonSchema;
     }
 
+    private Schema asConnectSchemaFromRealJsonSchema(JsonNode jsonSchema, boolean requiredField) {
+
+        JsonNode schemaTypeNode = jsonSchema.get(JsonSchema.SCHEMA_TYPE_FIELD_NAME);
+        if (schemaTypeNode == null || !schemaTypeNode.isTextual())
+            throw new DataException("Schema must contain 'type' field");
+        final SchemaBuilder builder;
+        switch (schemaTypeNode.textValue()) {
+            case "object":
+                builder = SchemaBuilder.struct();
+                ObjectNode fields = (ObjectNode) jsonSchema.get("properties");
+                ArrayNode requiredFieldsNode = (ArrayNode) jsonSchema.get("required");
+                List<String> requiredFields = requiredFieldsNode.valueStream().map(JsonNode::textValue).toList();
+                if (fields == null || !fields.isObject())
+                    throw new DataException("Struct schema's \"properties\" argument is not an object.");
+                for (var field : fields.properties()) {
+                    builder.field(field.getKey(), asConnectSchemaFromRealJsonSchema(field.getValue(), requiredFields.contains(field.getKey())));
+                }
+                break;
+            case "number":
+                builder = SchemaBuilder.float64();
+                break;
+            default:
+                throw new DataException("Unknown schema type: " + schemaTypeNode.textValue());
+        }
+        if (requiredField)
+            builder.required();
+        else
+            builder.optional();
+        return builder.build();
+    }
 
     public Schema asConnectSchema(JsonNode jsonSchema) {
         if (jsonSchema.isNull())
@@ -452,6 +482,10 @@ public class JsonConverter implements Converter, HeaderConverter, Versioned {
         if (cached != null)
             return cached;
 
+        if (jsonSchema.get("$schema") != null) {
+            // This is a JSON Schema metadata field; ignore it
+            return asConnectSchemaFromRealJsonSchema(jsonSchema, true);
+        }
         JsonNode schemaTypeNode = jsonSchema.get(JsonSchema.SCHEMA_TYPE_FIELD_NAME);
         if (schemaTypeNode == null || !schemaTypeNode.isTextual())
             throw new DataException("Schema must contain 'type' field");
