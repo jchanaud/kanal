@@ -11,9 +11,10 @@ group = "io.kanal.runner"
 
 repositories {
     mavenCentral()
-    maven {
-        url = uri("https://packages.confluent.io/maven/")
-    }
+    maven { url = uri("https://packages.confluent.io/maven/") }
+    // Jitpack for json-schema-inferrer
+    maven { url = uri("https://jitpack.io") }
+
     // TODO: Remove later
     //  JDBC Connector for Development phase
     flatDir {
@@ -24,16 +25,21 @@ repositories {
 dependencies {
     annotationProcessor("io.micronaut:micronaut-http-validation")
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
+
+    // Micronaut dependencies
     implementation("io.micronaut.kafka:micronaut-kafka")
     implementation("io.micronaut.serde:micronaut-serde-jackson")
     implementation("io.micronaut:micronaut-jackson-databind")
     implementation("org.yaml:snakeyaml")
-    implementation("com.dashjoin:jsonata:0.9.8")
     implementation("io.micronaut.micrometer:micronaut-micrometer-registry-prometheus")
     implementation("io.micronaut:micronaut-management")
 
+    // Kanal Runner specific dependencies
+    implementation("com.dashjoin:jsonata:0.9.8")
     implementation("org.apache.kafka:connect-api:4.1.0")
-    // I need Plugin classloading magic from connect-runtime...
+    implementation("com.github.saasquatch:json-schema-inferrer:0.2.1")
+
+    // I need Plugins classloading magic from connect-runtime... or do I?
     implementation("org.apache.kafka:connect-runtime:4.1.0")
 
 
@@ -87,4 +93,6 @@ tasks.named<io.micronaut.gradle.docker.NativeImageDockerfile>("dockerfileNative"
     jdkVersion = "21"
 }
 
-//tasks["classes"].dependsOn(":frontend:copyClientResources")
+tasks.named("classes") {
+    dependsOn(":frontend:copyClientResources")
+}

@@ -22,6 +22,8 @@ endpoints:
   prometheus:
     sensitive: false
 kafka:
+  health:
+    enabled: false
   bootstrap.servers: 195.154.119.34:9092
   security.protocol: SASL_PLAINTEXT
   sasl.mechanism: PLAIN
