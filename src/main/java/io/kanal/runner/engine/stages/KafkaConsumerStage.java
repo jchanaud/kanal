@@ -9,13 +9,17 @@ import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Prototype;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.header.Headers;
 import org.apache.kafka.connect.runtime.ConnectorConfig;
 import org.apache.kafka.connect.runtime.SinkConnectorConfig;
 import org.apache.kafka.connect.runtime.WorkerConfig;
+import org.apache.kafka.connect.runtime.isolation.LoaderSwap;
 import org.apache.kafka.connect.runtime.isolation.Plugins;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.storage.Converter;
@@ -23,6 +27,7 @@ import org.apache.kafka.connect.storage.HeaderConverter;
 import org.apache.kafka.connect.util.ConnectUtils;
 import org.slf4j.Logger;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -38,6 +43,7 @@ public class KafkaConsumerStage extends SourceStage {
     KafkaDefaultConfiguration kafkaDefaultConfiguration;
     Map<TopicPartition, Long> initialLSO;
     Map<TopicPartition, Long> lastReadOffsets = new HashMap<>();
+    Map<TopicPartition, Long> offsetsToCommit = new HashMap<>();
     Plugins plugins;
     Converter keyConverter;
     Converter valueConverter;
@@ -73,6 +79,7 @@ public class KafkaConsumerStage extends SourceStage {
                 ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
                 ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG + ".schemas.enable", "false",
                 ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.json.JsonConverter",
+                ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG + ".schemas.enable", "false",
                 ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG + ".schema.content", schemaInline,
                 ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG, "org.apache.kafka.connect.storage.SimpleHeaderConverter"
         ));
@@ -80,6 +87,7 @@ public class KafkaConsumerStage extends SourceStage {
         keyConverter = plugins.newConverter(connConfig, ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG, ConnectorConfig.KEY_CONVERTER_VERSION_CONFIG);
         valueConverter = plugins.newConverter(connConfig, WorkerConfig.VALUE_CONVERTER_CLASS_CONFIG, ConnectorConfig.VALUE_CONVERTER_VERSION_CONFIG);
         headerConverter = plugins.newHeaderConverter(connConfig, ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG, ConnectorConfig.HEADER_CONVERTER_VERSION_CONFIG);
+
 
     }
 
@@ -110,19 +118,37 @@ public class KafkaConsumerStage extends SourceStage {
         ObjectMapper mapper = new ObjectMapper();
         while (true) {
 
+            // TODO: commit offsets from offsetsToCommit map (and disable auto commit)
+            if (!offsetsToCommit.isEmpty()) {
+                Map<TopicPartition, OffsetAndMetadata> commits = offsetsToCommit.entrySet()
+                        .stream()
+                        .map(e -> Map.entry(e.getKey(), new OffsetAndMetadata(e.getValue() + 1)))
+                        .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                consumer.commitSync(commits);
+                offsetsToCommit.clear();
+            }
+
             var records = consumer.poll(Duration.ofSeconds(5));
-            LOG.info("Polled " + records.count() + " records for stage: " + name);
+            LOG.info("Polled {} records for stage: {}", records.count(), name);
             for (var msg : records) {
                 try {
                     // Deserialize the record value
-                    LOG.info("Record: " + msg.value() + " from topic: " + msg.topic() + " partition: " + msg.partition() + " offset: " + msg.offset());
+                    LOG.info("Consumed Record from topic: {} partition: {} offset: {}", msg.topic(), msg.partition(), msg.offset());
 
-                    SchemaAndValue keyAndSchema = keyConverter.toConnectData(msg.topic(), msg.headers(), msg.key());
+                    SchemaAndValue keyAndSchema;
+                    try (LoaderSwap loaderSwap = plugins.withClassLoader(keyConverter.getClass().getClassLoader())) {
+                        keyAndSchema = keyConverter.toConnectData(msg.topic(), msg.headers(), msg.key());
+                    }
 
-                    SchemaAndValue valueAndSchema = valueConverter.toConnectData(msg.topic(), msg.headers(), msg.value());
-                    // JsonConverter
+                    SchemaAndValue valueAndSchema;
+                    try (LoaderSwap loaderSwap = plugins.withClassLoader(keyConverter.getClass().getClassLoader())) {
+                        valueAndSchema = valueConverter.toConnectData(msg.topic(), msg.headers(), msg.value());
+                    }
 
-                    Headers headers = convertHeadersFor(msg);
+                    Headers headers;
+                    try (LoaderSwap loaderSwap = plugins.withClassLoader(keyConverter.getClass().getClassLoader())) {
+                        headers = convertHeadersFor(msg);
+                    }
 
 
                     Long timestamp = ConnectUtils.checkAndConvertTimestamp(msg.timestamp());
@@ -134,18 +160,27 @@ public class KafkaConsumerStage extends SourceStage {
                             msg.timestampType(),
                             headers);
 
+                    //origRecord.newRecord()
+                    var packet = new DataPacket(origRecord, () -> {
+                        ;
+                        // on Ack
+                        Map<TopicPartition, Long> commitMap = Map.of(
+                                new TopicPartition(msg.topic(), msg.partition()), msg.offset() + 1
+                        );
+                        offsetsToCommit.put(new TopicPartition(msg.topic(), msg.partition()), msg.offset());
+                        LOG.info("Committed offset for topic: " + msg.topic() + " partition: " + msg.partition() + " offset: " + (msg.offset() + 1));
+                    });
 
-                    var node = new DataPacket(Map.of("record", origRecord));
-                    //com.dashjoin.jsonata.json.Json.
                     // Send to output link
-                    emit("output", node);
+                    emit("output", packet);
                 } catch (Exception e) {
                     LOG.error("ouch", e);
-                    var errorPacket = new DataPacket(Map.of(
-                            "error", e.getMessage(),
-                            "valueString", msg.value()));
+
+
                     if (links.containsKey("error")) {
-                        emit("error", errorPacket);
+                        SinkRecord errorRecord = makeErrorRecord(msg, e);
+                        var packet = new DataPacket(errorRecord, null);
+                        emit("error", packet);
                     } else
                         throw e;
                 }
@@ -155,6 +190,25 @@ public class KafkaConsumerStage extends SourceStage {
                 maybeAllCaughtUp();
 
         }
+    }
+
+    private SinkRecord makeErrorRecord(ConsumerRecord<byte[], byte[]> msg, Exception e) {
+        Schema errorSchema = SchemaBuilder.struct()
+                .field("error", Schema.STRING_SCHEMA)
+                .field("value", Schema.STRING_SCHEMA)
+                .build();
+
+        var errorValue = new org.apache.kafka.connect.data.Struct(errorSchema)
+                .put("error", e.getMessage())
+                .put("value", new String(msg.value(), StandardCharsets.UTF_8));
+
+        SinkRecord errorRecord = new SinkRecord(msg.topic(), msg.partition(),
+                Schema.STRING_SCHEMA, new String(msg.key(), StandardCharsets.UTF_8),
+                errorSchema, errorValue,
+                msg.offset(),
+                msg.timestamp(),
+                msg.timestampType());
+        return errorRecord;
     }
 
     private Headers convertHeadersFor(ConsumerRecord<byte[], byte[]> record) {

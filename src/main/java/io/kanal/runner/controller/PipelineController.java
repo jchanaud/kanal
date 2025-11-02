@@ -110,6 +110,14 @@ public class PipelineController {
                         }'
                   peekaboo:
                     type: peek
+                  branching:
+                    type: branch
+                    branches:
+                      - condition: 'value.testouille > 10'
+                        port: high-values
+                      - condition: 'value.testouille <= 10'
+                        port: low-values
+                    default-port: others
                 links:
                   in:
                     source:

@@ -14,8 +14,8 @@ public abstract class CacheStage extends Stage {
     }
 
     private List<SourceStage> getCacheSources(Stage stage) {
-        if (stage instanceof SourceStage)
-            return List.of((SourceStage) stage);
+        if (stage instanceof SourceStage sourceStage)
+            return List.of(sourceStage);
         var inputsOfStage = stage.links.get("input");
         return inputsOfStage.stream().flatMap(sp -> getCacheSources(sp.stage).stream()).toList();
     }

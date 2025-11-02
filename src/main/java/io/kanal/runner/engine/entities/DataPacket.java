@@ -1,20 +1,21 @@
 package io.kanal.runner.engine.entities;
 
-import java.util.HashMap;
-import java.util.Map;
+import lombok.Getter;
+import org.apache.kafka.connect.connector.ConnectRecord;
 
+@Getter
 public class DataPacket {
-    private Map<String, Object> data = new HashMap<>();
+    private final ConnectRecord<?> record;
+    private final Runnable onAck;
 
-    public DataPacket(Map<String, Object> data) {
-        this.data = data;
+    public DataPacket(ConnectRecord<?> record, Runnable onAck) {
+        this.onAck = onAck;
+        this.record = record;
     }
 
-    public Map<String, Object> getData() {
-        return data;
-    }
-
-    public void setData(Map<String, Object> data) {
-        this.data = data;
+    public void ack() {
+        if (onAck != null) {
+            onAck.run();
+        }
     }
 }
